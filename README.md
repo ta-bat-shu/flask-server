@@ -23,7 +23,7 @@
     {
         "success": true,
         "message": "Login successful",
-        "role": "admin" or "user"
+        "role": "admin", "user"
     }
     ```
   - 실패:
