@@ -1,9 +1,9 @@
 from flask import Flask, jsonify, request
-from flask_pymongo import PyMongo
 from datetime import datetime
-import gridfs
-from bson import ObjectId
+from flask_pymongo import PyMongo
 from flask_cors import CORS
+from bson import ObjectId
+import gridfs
 
 app = Flask(__name__)
 CORS(app)
@@ -13,60 +13,47 @@ app.config["MONGO_URI"] = "mongodb://localhost:27017/admin"
 mongo = PyMongo(app)
 fs = gridfs.GridFS(mongo.db)
 
+
 # 로그인 처리
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    admin = get_admin(username)
-    if admin and admin["password"] == password:
-        return jsonify({"success": True, "message": "Login successful", "role": "admin"})
-
-    user = get_user(username)
-    if user and user["password"] == password:
-        return jsonify({"success": True, "message": "Login successful", "role": "user"})
-
-    return jsonify({"success": False, "message": "Invalid username or password"}), 400
-
-# QR 코드로 자전거 확인 (큐싱 방지)
-@app.route('/check_bike', methods=['POST'])
-def check_bike():
     try:
-        data = request.get_json()  # 요청 데이터를 JSON 형식으로 가져오기
-        print(f"Received request data: {data}")  # 수신된 요청 데이터를 출력하여 디버깅
+        data = request.get_json()
 
-        bike_id = data.get('bike_id')  # QR 코드로 전송된 bike_id 확인
+        # 요청 데이터 검증
+        username = data.get('username')
+        password = data.get('password')
 
-        # 입력된 QR 코드 검증
-        if not bike_id:
-            print("Error: bike_id is missing from the request")
-            return jsonify({"status": "error", "message": "QR 코드가 비어 있습니다."}), 400
+        if not username or not password:
+            return jsonify({"success": False, "message": "Username and password are required"}), 400
 
-        # 자전거 ID 형식 검증 (예: b001, b002 형식)
-        if not bike_id.startswith('b') or not bike_id[1:].isdigit() or len(bike_id) != 4:
-            print(f"Warning: Invalid bike_id format - {bike_id}")
-            return jsonify({"status": "warning", "message": "큐싱 의심: 올바르지 않은 QR 코드 형식"}), 400
+        # 관리자 확인
+        admin = mongo.db.admin.find_one({"adminId": username})
+        if admin and admin["password"] == password:
+            return jsonify({
+                "success": True,
+                "message": "Login successful",
+                "role": "admin"
+            }), 200
 
-        # MongoDB에서 자전거 ID 확인 (bikeId 필드로 조회)
-        bike = mongo.db.bicycles.find_one({"bikeId": bike_id})
-        print(f"MongoDB query result: {bike}")  # DB에서 조회한 결과 출력
+        # 사용자 확인
+        user = mongo.db.users.find_one({"userId": username})
+        if user and user["password"] == password:
+            # 사용자 로그인 성공 시 tf_rent를 true로 설정
+            mongo.db.users.update_one({"userId": username}, {"$set": {"tf_rent": True}})
+            return jsonify({
+                "success": True,
+                "message": "Login successful",
+                "role": "user",
+                "tf_rent": True
+            }), 200
 
-        if bike:
-            # 자전거가 대여 가능한 상태인지 확인
-            if bike.get("status") == "available":
-                print(f"Success: Bike {bike_id} is available for rent")
-                return jsonify({"status": "success", "message": "Bike is available for rent", "bike_id": bike_id}), 200
-            else:
-                print(f"Error: Bike {bike_id} is currently unavailable")
-                return jsonify({"status": "error", "message": "Bike is currently unavailable"}), 403
-        else:
-            print(f"Warning: Bike {bike_id} not found in the database")
-            return jsonify({"status": "warning", "message": "큐싱 의심: 등록되지 않은 QR 코드입니다."}), 404
+        # 로그인 실패
+        return jsonify({"success": False, "message": "Invalid username or password"}), 400
+
     except Exception as e:
-        print(f"Server error: {str(e)}")
-        return jsonify({"status": "error", "message": "서버 내부 오류 발생", "details": str(e)}), 500
+        return jsonify({"success": False, "message": "Internal server error", "details": str(e)}), 500
+
 
 
 # 자전거 대여 요청 처리
@@ -74,60 +61,88 @@ def check_bike():
 def rent_bike():
     try:
         data = request.get_json()
-        print(f"Received rent bike request: {data}")  # 요청 데이터 디버깅
+        user_id = data.get('user_id')
+        bike_id = data.get('bike_id')
 
-        bike_id = data.get('bikeId')
-        if not bike_id:
-            print("Error: bikeId is missing in the request")
-            return jsonify({"status": "error", "message": "QR 코드가 비어 있습니다."}), 400
+        if not user_id or not bike_id:
+            return jsonify({"status": "error", "message": "User ID and Bike ID are required"}), 400
 
+        # 사용자 상태 확인
+        user = mongo.db.users.find_one({"userId": user_id})
+        if not user or not user.get("tf_rent", True):
+            return jsonify({"status": "error", "message": "User cannot rent a bike"}), 403
+
+        # 자전거 상태 확인
         bike = mongo.db.bicycles.find_one({"bikeId": bike_id})
-        print(f"MongoDB query result: {bike}")  # DB 조회 결과 디버깅
+        if not bike or bike.get("status") != "available":
+            return jsonify({"status": "error", "message": "Bike is not available"}), 403
 
-        if bike:
-            if bike["status"] == "available":
-                update_bicycle(bike_id, "available")
-                return jsonify({"status": "success", "message": "Bike rented successfully"}), 200
-            else:
-                return jsonify({"status": "error", "message": "Bike is currently unavailable"}), 403
-        else:
-            print(f"Error: Bike {bike_id} not found in the database")
-            return jsonify({"status": "error", "message": "Bike ID not found"}), 404
+        # 상태 업데이트
+        mongo.db.users.update_one({"userId": user_id}, {"$set": {"tf_rent": False}})
+        mongo.db.bicycles.update_one({"bikeId": bike_id}, {"$set": {"status": "unavailable"}})
+
+        return jsonify({"status": "success", "message": "Bike rented successfully"}), 200
+
     except Exception as e:
-        print(f"Server error: {str(e)}")
-        return jsonify({"status": "error", "message": "서버 내부 오류 발생", "details": str(e)}), 500
+        return jsonify({"status": "error", "message": "Internal server error", "details": str(e)}), 500
+
 
 # 자전거 반납 요청 처리
 @app.route('/return_bike', methods=['POST'])
 def return_bike():
-    data = request.get_json()
-    bike_id = data.get('bikeId')
+    try:
+        data = request.get_json()
+        bike_id = data.get('bike_id')
+        user_id = data.get('user_id')
 
-    if not bike_id:
-        return jsonify({"status": "error", "message": "QR 코드가 비어 있습니다."}), 400
+        if not bike_id or not user_id:
+            return jsonify({"status": "error", "message": "Bike ID and User ID are required"}), 400
 
-    bike = mongo.db.bicycles.find_one({"bikeId": bike_id})
-    if bike:
-        if bike["status"] == "unavailable":
-            update_bicycle(bike_id, "available")
-            return jsonify({"status": "success", "message": "Bike returned successfully"}), 200
+        user = mongo.db.users.find_one({"userId": user_id})
+        bike = mongo.db.bicycles.find_one({"bikeId": bike_id})
+
+        if not user:
+            return jsonify({"status": "error", "message": "User not found"}), 404
+
+        if not bike:
+            return jsonify({"status": "error", "message": "Bike not found"}), 404
+
+        if bike.get("status") != "unavailable":
+            return jsonify({"status": "error", "message": "Bike is not currently rented"}), 403
+
+        # 상태 업데이트
+        mongo.db.users.update_one({"userId": user_id}, {"$set": {"tf_rent": True}})
+        mongo.db.bicycles.update_one({"bikeId": bike_id}, {"$set": {"status": "available"}})
+
+        return jsonify({"status": "success", "message": "Bike returned successfully"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Internal server error", "details": str(e)}), 500
+
+
+
+# QR 코드로 자전거 확인
+@app.route('/check_bike', methods=['POST'])
+def check_bike():
+    try:
+        data = request.get_json()
+        bike_id = data.get('bike_id')
+
+        if not bike_id:
+            return jsonify({"status": "error", "message": "QR code is empty"}), 400
+
+        # 자전거 조회
+        bike = mongo.db.bicycles.find_one({"bikeId": bike_id})
+
+        if bike:
+            if bike.get("status") == "available":
+                return jsonify({"status": "success", "message": "Bike is available", "bike_id": bike_id}), 200
+            else:
+                return jsonify({"status": "error", "message": "Bike is not available"}), 403
         else:
-            return jsonify({"status": "error", "message": "Bike is already available"}), 403
-    else:
-        return jsonify({"status": "error", "message": "Bike ID not found"}), 404
+            return jsonify({"status": "error", "message": "Bike not registered"}), 404
 
-# 자전거 정보 업데이트 (상태 변경)
-def update_bicycle(bike_id, status):
-    mongo.db.bicycles.update_one({"bikeId": bike_id}, {"$set": {"status": status}})
-    return jsonify({"message": "Updated bike status successfully"}), 200
-
-# 관리자 정보 조회
-def get_admin(admin_id):
-    return mongo.db.admin.find_one({"adminId": admin_id})
-
-# 사용자 정보 조회
-def get_user(user_id):
-    return mongo.db.users.find_one({"userId": user_id})
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Internal server error", "details": str(e)}), 500
 
 # 신고 정보 추가
 @app.route('/reports', methods=['POST'])
@@ -138,6 +153,10 @@ def add_report():
         report_category = request.form.get('category')
         report_content = request.form.get('contents')
         image = request.files.get('image')
+
+        # 디버깅용 로그 추가
+        print(f"Received data: bikeId={bike_id}, userId={user_id}, category={report_category}, contents={report_content}")
+        print(f"Image received: {image is not None}")
 
         if not all([bike_id, user_id, report_category, report_content]):
             return jsonify({"error": "Missing required fields"}), 400
@@ -158,7 +177,9 @@ def add_report():
 
         return jsonify({"message": "Report succeeded"}), 201
     except Exception as e:
+        print(f"Error adding report: {str(e)}")  # 에러 출력
         return jsonify({"error": "Server error", "details": str(e)}), 500
+
 
 # 신고 정보 조회
 @app.route('/reports', methods=['GET'])
@@ -205,5 +226,6 @@ def get_login_records():
     except Exception as e:
         return jsonify({"error": "Failed to fetch login records", "details": str(e)}), 500
     
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
