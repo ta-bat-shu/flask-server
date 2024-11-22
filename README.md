@@ -1,239 +1,147 @@
-# 자전거 대여 및 관리 시스템 API
+# Flask 서버와 클라이언트 애플리케이션 설명
 
-이 API는 자전거 대여 및 관리 시스템을 위한 Flask 서버입니다. MongoDB를 사용하여 데이터를 저장하고, GridFS를 통해 이미지 파일을 관리합니다.
-
----
-
-## API 명세서
-
-### 1. 로그인
-
-- **URL**: `/login`
-- **메서드**: `POST`
-- **요청 본문**:
-    ```json
-    {
-        "username": "사용자 이름",
-        "password": "비밀번호"
-    }
-    ```
-- **응답**:
-  - 성공:
-    ```json
-    {
-        "success": true,
-        "message": "Login successful",
-        "role": "admin", "user"
-    }
-    ```
-  - 실패:
-    ```json
-    {
-        "success": false,
-        "message": "Invalid username or password"
-    }
-    ```
-
-### 2. 자전거 확인
-
-- **URL**: `/check_bike`
-- **메서드**: `POST`
-- **요청 본문**:
-    ```json
-    {
-        "bike_id": "자전거 ID"
-    }
-    ```
-- **응답**:
-  - 성공:
-    ```json
-    {
-        "status": "success",
-        "message": "Bike found",
-        "bike_id": "자전거 ID"
-    }
-    ```
-  - 실패:
-    ```json
-    {
-        "status": "error",
-        "message": "Bike ID not found"
-    }
-    ```
-
-### 3. 자전거 대여 요청
-
-- **URL**: `/rent_bike`
-- **메서드**: `POST`
-- **요청 본문**:
-    ```json
-    {
-        "bike_id": "자전거 ID"
-    }
-    ```
-- **응답**:
-  - 성공:
-    ```json
-    {
-        "status": "success",
-        "message": "Bike rented successfully"
-    }
-    ```
-  - 실패:
-    ```json
-    {
-        "status": "error",
-        "message": "Bike is currently unavailable"
-    }
-    ```
-
-### 4. 자전거 반납 요청
-
-- **URL**: `/return_bike`
-- **메서드**: `POST`
-- **요청 본문**:
-    ```json
-    {
-        "bike_id": "자전거 ID"
-    }
-    ```
-- **응답**:
-  - 성공:
-    ```json
-    {
-        "status": "success",
-        "message": "Bike returned successfully"
-    }
-    ```
-  - 실패:
-    ```json
-    {
-        "status": "error",
-        "message": "Bike is already available"
-    }
-    ```
-
-### 5. 신고 정보 추가
-
-- **URL**: `/reports`
-- **메서드**: `POST`
-- **폼 데이터**:
-  - `bikeId`: 자전거 ID
-  - `userId`: 사용자 ID
-  - `category`: 신고 카테고리
-  - `contents`: 신고 내용
-  - `image`: 이미지 파일
-- **응답**:
-  - 성공:
-    ```json
-    {
-        "message": "Report succeeded"
-    }
-    ```
-
-### 6. 신고 정보 삭제
-
-- **URL**: `/reports`
-- **메서드**: `DELETE`
-- **요청 본문**:
-    ```json
-    {
-        "bikeId": "자전거 ID"
-    }
-    ```
-- **응답**:
-  - 성공:
-    ```json
-    {
-        "message": "Deleted report"
-    }
-    ```
-  - 실패:
-    ```json
-    {
-        "error": "This report doesn't exist"
-    }
-    ```
-
-### 7. 모든 신고 정보 조회
-
-- **URL**: `/reports`
-- **메서드**: `GET`
-- **응답**:
-    ```json
-    [
-        {
-            "bikeId": "자전거 ID",
-            "userId": "사용자 ID",
-            "date": "신고 날짜",
-            "category": "신고 카테고리",
-            "contents": "신고 내용",
-            "image": "이미지 URL (선택적)"
-        }
-    ]
-    ```
-
-### 8. 이미지 로드
-
-- **URL**: `/image/<image_id>`
-- **메서드**: `GET`
-- **응답**:
-  - 성공: 이미지 파일
-  - 실패:
-    ```json
-    {
-        "error": "Image not found"
-    }
-    ```
+이 프로젝트는 Flask 서버와 Android 클라이언트 애플리케이션을 통해 자전거 대여 관리 시스템을 구현합니다. 서버는 사용자 인증, 자전거 대여 및 반납, 신고 관리, 관리자 데이터 조회 등을 처리하며, 클라이언트는 이를 기반으로 QR 코드 스캔, 블루투스 통신 등을 수행합니다.
 
 ---
 
-## 함수 설명
+## **Flask 서버 설명**
 
-- `login()`: 사용자 로그인 처리
-- `check_bike()`: 자전거 ID로 자전거 확인
-- `rent_bike()`: 자전거 대여 요청 처리
-- `return_bike()`: 자전거 반납 요청 처리
-- `update_bicycle()`: 자전거 상태 업데이트
-- `get_admin()`: 관리자 정보 조회
-- `get_user()`: 사용자 정보 조회
-- `add_report()`: 신고 정보 추가
-- `delete_report()`: 신고 정보 삭제
-- `get_all_reports()`: 모든 신고 정보 조회
-- `get_image()`: 이미지 파일 로드
+### 1. 사용자 인증
 
----
+#### 로그인
+- **엔드포인트**: `/login` (POST)
+- **설명**: 관리자 및 일반 사용자의 로그인 요청을 처리합니다.
+- **주요 기능**:
+  - **관리자 로그인**: `admin` 컬렉션에서 관리자 정보를 확인.
+  - **사용자 로그인**: 로그인 성공 시 `tf_rent` 상태를 `True`로 업데이트.
+  - **오류 처리**: 잘못된 자격 증명 또는 누락된 데이터를 처리.
 
-## DB 구성
+```python
+@app.route('/login', methods=['POST'])
+def login():
+    # 관리자 및 사용자 로그인 처리
+```
 
-### 1. Users Index
-- **userId**: 로그인 시 필요한 유저 아이디 [Unique]
-- **password**: 로그인 시 필요한 비밀번호
+## 2. 자전거 관리 기능
 
-### 2. Admin Index
-- **adminId**: 관리자 로그인 시 필요한 관리자 아이디 [Unique]
-- **password**: 관리자 로그인 시 필요한 관리자 비밀번호
+### 자전거 대여
+- **엔드포인트**: `/rent_bike` (POST)
+- **설명**: 사용자의 자전거 대여 요청을 처리합니다.
+- **주요 기능**:
+  - 사용자가 대여 가능한 상태인지 확인.
+  - 대여 성공 시 자전거 상태를 `unavailable`로 업데이트.
 
-### 3. Bicycles Index
-- **bikeId**: 자전거 고유번호 [Unique]
-- **status**: 자전거 상태 (대여 가능, 대여 불가능)
+```python
+@app.route('/rent_bike', methods=['POST'])
+def rent_bike():
+    # 자전거 대여 요청 처리
+```
+### 자전거 반납
+- **엔드포인트**: `/return_bike` (POST)
+- **설명**: 사용자의 자전거 반납 요청을 처리합니다.
+- **주요 기능**:
+  - 반납된 자전거 상태를 `available`로 업데이트.
+  - 현재 대여 중인 자전거인지 확인.
 
-### 4. Reports Index
-- **bikeId**: 자전거 고유번호 [Unique]
-- **userId**: 유저 아이디 (작성자) [Unique]
-- **date**: 신고 전송한 날짜와 시간
-- **category**: 신고 유형 (고장 등)
-- **contents**: 신고 상세 내용
-- **imageId**: 이미지를 불러오기 위한 고유 이미지 아이디 [Unique]
+```python
+@app.route('/return_bike', methods=['POST'])
+def return_bike():
+    # 자전거 반납 요청 처리
+```
+### 자전거 상태 확인
+- **엔드포인트**: `/check_bike` (POST)
+- **설명**: QR 코드를 통해 자전거 정보를 확인합니다.
+- **주요 기능**:
+  - 자전거가 등록되어 있는지 확인.
+  - 자전거가 대여 가능한 상태인지 확인.
 
-### 5. GridFS: 이미지 관리를 위한 GridFS 라이브러리
+```python
+@app.route('/check_bike', methods=['POST'])
+def check_bike():
+    # 자전거 상태 확인 처리
+```
 
-#### fs.files Index
-- **filename**: 파일 이름
-- **chunkSize**: 청크 크기
-- **length**: 이미지 전체 크기 [byte]
-- **uploadDate**: 이미지가 업로드된 날짜와 시간
+## 3. 신고 관리
 
-#### fs.chunks
-- **files_id**: 이미지 고유 아이디 [ObjectId, Unique]
-- **data**: 실제 이미지 데이터
+### 신고 제출
+- **엔드포인트**: `/reports` (POST)
+- **설명**: 사용자가 자전거와 관련된 신고를 제출합니다.
+- **주요 기능**:
+  - 신고 데이터를 데이터베이스에 저장.
+  - 이미지를 포함한 신고는 GridFS를 사용하여 저장.
+
+```python
+@app.route('/reports', methods=['POST'])
+def add_report():
+    # 신고 데이터와 이미지를 저장
+```
+### 신고 조회
+- **엔드포인트**: `/reports` (GET)
+- **설명**: 관리자 화면에서 모든 신고 데이터를 조회합니다.
+- **주요 기능**:
+  - 신고 데이터를 리스트 형태로 반환.
+  - 이미지 URL을 포함하여 데이터를 제공합니다.
+
+```python
+@app.route('/reports', methods=['GET'])
+def get_reports():
+    # 신고 데이터 조회
+```
+### 신고 이미지 조회
+- **엔드포인트**: `/image/<image_id>` (GET)
+- **설명**: 신고와 연결된 이미지를 반환합니다.
+- **주요 기능**:
+  - GridFS에서 이미지 파일을 검색하여 반환.
+
+```python
+@app.route('/image/<image_id>', methods=['GET'])
+def get_image(image_id):
+    # 신고 이미지 반환
+```
+
+
+## 4. 관리자 기능
+
+### 모든 자전거 상태 조회
+- **엔드포인트**: `/bikes` (GET)
+- **설명**: 모든 자전거의 상태를 조회합니다.
+- **주요 기능**:
+  - 자전거 ID와 상태를 리스트 형태로 반환.
+
+```python
+@app.route('/bikes', methods=['GET'])
+def get_bikes():
+    # 자전거 상태 조회
+```
+### 로그인 기록 조회
+- **엔드포인트**: `/login_records` (GET)
+- **설명**: 사용자의 로그인 기록을 조회합니다.
+- **주요 기능**:
+  - 사용자 ID 정보를 반환.
+
+```python
+@app.route('/login_records', methods=['GET'])
+def get_login_records():
+    # 로그인 기록 조회
+```
+
+## 5. 오류 처리
+
+- 모든 엔드포인트는 요청이 잘못되었거나 서버 오류가 발생한 경우 상세한 오류 메시지를 반환합니다.
+- **주요 오류 코드**:
+  - 400: 잘못된 요청 (예: 필수 데이터 누락).
+  - 403: 금지된 작업 (예: 대여 불가능한 자전거).
+  - 404: 데이터가 존재하지 않음 (예: 등록되지 않은 자전거).
+  - 500: 서버 내부 오류.
+
+## 6. 서버 설정
+
+  - 호스트: 0.0.0.0
+  - 포트: 5000
+  - 데이터베이스: MongoDB 및 GridFS를 사용하여 이미지 저장.
+
+```python
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Flask 서버 실행
+```
